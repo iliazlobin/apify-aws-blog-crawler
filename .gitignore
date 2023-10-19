@@ -1,0 +1,8 @@
+.DS_Store
+.idea
+.venv
+apify_storage
+dist
+node_modules
+package-lock.json
+storage
