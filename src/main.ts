@@ -1,22 +1,8 @@
 import { Actor } from 'apify';
 import { PuppeteerCrawler } from 'crawlee';
-// this is ESM project, and as such, it requires you to specify extensions in your relative imports
-// read more about this here: https://nodejs.org/docs/latest-v18.x/api/esm.html#mandatory-file-extensions
-// note that we need to use `.js` even when inside TS files
 import { router } from './routes.js';
 
 await Actor.init();
-
-// const startUrls = [
-//     'https://aws.amazon.com/blogs/architecture/',
-//     'https://aws.amazon.com/blogs/mt/',
-//     'https://aws.amazon.com/blogs/aws/',
-//     'https://aws.amazon.com/blogs/apn/',
-//     'https://aws.amazon.com/blogs/big-data/',
-//     'https://aws.amazon.com/blogs/enterprise-strategy/',
-//     'https://aws.amazon.com/blogs/aws-cloud-financial-management/',
-//     'https://aws.amazon.com/blogs/compute/',
-// ];
 
 const startUrls = [
     'https://aws.amazon.com/blogs',

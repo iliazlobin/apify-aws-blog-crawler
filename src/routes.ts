@@ -6,95 +6,77 @@ export const router = createPuppeteerRouter();
 router.addDefaultHandler(async ({ page, log, enqueueLinks }) => {
 
     let { lookBackWindow = 1,
-        cardsLimit = 100,
         paginationLimit = 10,
     } = await Actor.getInput<{
         lookBackWindow?: number,
-        cardsLimit?: number,
         paginationLimit?: number
     }>() || {};
     log.debug(`Inputs:
         lookBackWindow: ${lookBackWindow}
-        cardsLimit: ${cardsLimit}
         paginationLimit: ${paginationLimit}
     `);
 
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const targetDate = new Date(startOfToday.getTime() - lookBackWindow * 24 * 60 * 60 * 1000);
-
-    log.info(`targetDate: ${targetDate}, startOfToday: ${startOfToday}`);
-
-    let stop = false;
-
-    const allCards: any[] = [];
-
     for (let i = 0; i < paginationLimit; i++) {
-        await new Promise(r => setTimeout(r, 500));
+
+        const cards = await page.$$eval('li[class="m-card m-list-card"]', () => '');
+        log.debug(`Number of cards detected: ${cards.length}`);
+
         try {
             await page.waitForSelector('span.m-directories-more-arrow-icon');
             await page.click('span.m-directories-more-arrow-icon');
         } catch (e) {
             log.error(`error clicking on the "more" button: ${e}`);
-            stop = true;
             break;
         }
+        await new Promise(r => setTimeout(r, 1000));
+    }
 
-        const cards = await page.$$eval('li[class="m-card m-list-card"]', (els) => {
-            const items: any[] = [];
+    log.info(`parsing all cards`);
+    const cards = await page.$$eval('li[class="m-card m-list-card"]', (els) => {
+        const items: any[] = [];
 
-            for (const el of els) {
-                const title = el.querySelector('div.m-card-title')?.textContent ?? '';
-                const url = el.querySelector('a')?.getAttribute('href') ?? '';
-                const info = el.querySelector('div.m-card-info')?.textContent ?? '';
-                const entries = info.split(',').map((s) => s.trim());
-                const date = entries[entries.length - 1];
-                const authors = entries.slice(0, entries.length - 1);
-                const desc = el.querySelector('div.m-card-description')?.textContent ?? '';
+        for (const el of els) {
+            const title = el.querySelector('div.m-card-title')?.textContent ?? '';
+            const url = el.querySelector('a')?.getAttribute('href') ?? '';
+            const info = el.querySelector('div.m-card-info')?.textContent ?? '';
+            const entries = info.split(',').map((s) => s.trim());
+            const date = entries[entries.length - 1];
+            const authors = entries.slice(0, entries.length - 1);
+            const desc = el.querySelector('div.m-card-description')?.textContent ?? '';
 
-                items.push({
-                    title,
-                    url,
-                    authors,
-                    date,
-                    desc
-                });
-            }
-
-            return items;
-        });
-
-        for (const card of cards) {
-            const date = new Date(card.date);
-            if (date < targetDate) {
-                log.debug(`skipping card: [${date}] (${card.url}) ${card.title}`);
-                // log.info(`the target date has been reached: ${targetDate}`);
-                // stop = true;
-                continue;
-            }
-            if (cardsLimit > 0 && allCards.length >= cardsLimit) {
-                log.debug(`the cards limit has been reached: ${cardsLimit}`);
-                stop = true;
-                break;
-            }
-            if (!allCards.some(c => c.url === card.url)) {
-                log.debug(`adding card (${allCards.length}): [${date}] (${card.url}) ${card.title}`);
-                allCards.push(card);
-            }
+            items.push({
+                title,
+                url,
+                authors,
+                date,
+                desc
+            });
         }
 
-        if (stop) {
-            break;
+        return items;
+    });
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const targetDate = new Date(startOfToday.getTime() - lookBackWindow * 24 * 60 * 60 * 1000);
+    log.info(`filtering cards: targetDate: ${targetDate}, startOfToday: ${startOfToday}`);
+
+    const filteredCards: any[] = [];
+    for (const card of cards) {
+        const date = new Date(card.date);
+        if (date < targetDate) {
+            log.debug(`skipping the card: [${date}] (${card.url}) ${card.title}`);
+            continue;
         }
-        if (allCards.length >= cardsLimit) {
-            break;
+        if (!filteredCards.some(c => c.url === card.url)) {
+            log.debug(`adding the card (${filteredCards.length}): [${date}] (${card.url}) ${card.title}`);
+            filteredCards.push(card);
         }
     }
 
-    log.debug(`collected ${allCards.length} cards`);
-
-    for (const card of allCards) {
-        log.info(`enqueueing url: ${card.url}`);
+    log.info(`enqueuing ${filteredCards.length} cards`);
+    for (const card of filteredCards) {
+        log.debug(`enqueueing url: ${card.url}, ${card.title}`);
 
         await enqueueLinks({
             urls: [card.url],
@@ -140,7 +122,7 @@ router.addHandler('article', async ({ request, page, log }) => {
 
     const text = await page.$eval('section[class="blog-post-content lb-rtxt"]', (el) => el.textContent);
 
-    log.info(`saving page: title: ${title}, url: ${request.loadedUrl}`);
+    log.info(`saving the page: title: ${title}, url: ${request.loadedUrl}`);
 
     const url = request.loadedUrl ?? '';
     const regex = /blogs\/([^\/]*)/;
