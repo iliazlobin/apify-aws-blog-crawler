@@ -1,9 +1,7 @@
 {
-    "startUrls": [
-        {
-            "url": "https://aws.amazon.com/blogs"
-        }
-    ],
-    "lookBackWindow": 0,
-    "cardsLimit": 3
+    "lookBackWindow": 1,
+    "paginationLimit": 3,
+    "urls": [
+        "https://aws.amazon.com/blogs"
+    ]
 }

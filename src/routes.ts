@@ -4,17 +4,17 @@ import { createPuppeteerRouter } from 'crawlee';
 export const router = createPuppeteerRouter();
 
 router.addDefaultHandler(async ({ page, log, enqueueLinks }) => {
+    const url = page.url() ?? '';
+    log.info(`processing default page: ${url}`);
 
-    let { lookBackWindow = 1,
-        paginationLimit = 10,
+    let {
+        lookBackWindow = 0,
+        paginationLimit = 3,
     } = await Actor.getInput<{
         lookBackWindow?: number,
         paginationLimit?: number
     }>() || {};
-    log.debug(`Inputs:
-        lookBackWindow: ${lookBackWindow}
-        paginationLimit: ${paginationLimit}
-    `);
+    log.debug(`inputs: lookBackWindow=${lookBackWindow}, paginationLimit=${paginationLimit}`);
 
     for (let i = 0; i < paginationLimit; i++) {
 
@@ -58,25 +58,29 @@ router.addDefaultHandler(async ({ page, log, enqueueLinks }) => {
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const startOfTodayText = startOfToday.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
     const targetDate = new Date(startOfToday.getTime() - lookBackWindow * 24 * 60 * 60 * 1000);
-    log.info(`filtering cards: targetDate: ${targetDate}, startOfToday: ${startOfToday}`);
+    const targetDateText = targetDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+
+    log.info(`filtering cards: ${targetDateText} - ${startOfTodayText}`);
 
     const filteredCards: any[] = [];
     for (const card of cards) {
         const date = new Date(card.date);
+        const dateText = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
         if (date < targetDate) {
-            log.debug(`skipping the card: [${date}] (${card.url}) ${card.title}`);
+            log.debug(`skipping card: (${dateText} < ${targetDateText}): ${card.url} ${card.title}`);
             continue;
         }
         if (!filteredCards.some(c => c.url === card.url)) {
-            log.debug(`adding the card (${filteredCards.length}): [${date}] (${card.url}) ${card.title}`);
+            log.debug(`adding card (${dateText} > ${targetDateText}): ${card.url} ${card.title}`);
             filteredCards.push(card);
         }
     }
 
     log.info(`enqueuing ${filteredCards.length} cards`);
     for (const card of filteredCards) {
-        log.debug(`enqueueing url: ${card.url}, ${card.title}`);
+        log.debug(`enqueueing url: ${card.url} ${card.title}`);
 
         await enqueueLinks({
             urls: [card.url],
@@ -85,19 +89,31 @@ router.addDefaultHandler(async ({ page, log, enqueueLinks }) => {
                 title: card.title,
                 authors: card.authors,
                 date: card.date,
-                desc: card.desc
+                desc: card.desc,
+                targetDateText: targetDateText,
             },
         });
     }
 });
 
 router.addHandler('article', async ({ request, page, log }) => {
-    const title = await page.title();
+    const url = request.loadedUrl ?? '';
+    const pageTitle = await page.title();
     const data = request.userData;
 
-    const datePublishedText = await page.$eval('time[property="datePublished"]', (el) => el.textContent) ?? '';
-    const date = new Date(datePublishedText);
-    log.debug(`datePublished: ${date}`);
+    const dateTag = await page.$eval('time[property="datePublished"]', (el) => el.textContent) ?? '';
+    const date = new Date(dateTag);
+    const dateText = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+
+    log.debug(`parsing page (${dateText}): ${url} ${pageTitle}`);
+
+    const targetDateText = data.targetDateText;
+    const targetDate = new Date(targetDateText)
+
+    if (date < targetDate) {
+        log.debug(`skipping article: (${dateText} < ${targetDateText}): ${url} ${pageTitle}`);
+        return;
+    }
 
     const links = await page.$eval('span.blog-post-categories', (el) => {
         const links: string[] = [];
@@ -122,15 +138,14 @@ router.addHandler('article', async ({ request, page, log }) => {
 
     const text = await page.$eval('section[class="blog-post-content lb-rtxt"]', (el) => el.textContent);
 
-    log.info(`saving the page: title: ${title}, url: ${request.loadedUrl}`);
-
-    const url = request.loadedUrl ?? '';
     const regex = /blogs\/([^\/]*)/;
     const match = url.match(regex);
     const blog = match ? match[1] : '';
 
+    log.info(`saving page (${dateText}): ${url} ${pageTitle}`);
+
     await Apify.Dataset.pushData({
-        title: title,
+        title: pageTitle,
         url: request.loadedUrl,
         authors: data.authors,
         date: data.date,
